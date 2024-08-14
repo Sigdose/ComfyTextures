@@ -290,6 +290,17 @@ class COMFYTEXTURES_API UComfyTexturesWidgetBase : public UEditorUtilityWidget
   UFUNCTION(BlueprintCallable, Category = "ComfyTextures")
   bool ProcessMultipleActors(const TArray<AActor*>& Actors, const FComfyTexturesRenderOptions& RenderOpts);
 
+  //LSD start
+  UFUNCTION(BlueprintCallable, Category = "ComfyTextures")
+  bool Make3d(const FComfyTexturesRenderOptions& RenderOpts, int& RequestIndex);
+
+  UFUNCTION(BlueprintCallable, Category = "ComfyTextures")
+  bool GetExecutedFlag();
+
+  UFUNCTION(BlueprintCallable, Category = "ComfyTextures")
+  void SetExecutedFlag(bool Flag);
+  //LSD end
+
   UFUNCTION(BlueprintCallable, Category = "ComfyTextures")
   bool ProcessRenderResults();
 
@@ -346,6 +357,8 @@ class COMFYTEXTURES_API UComfyTexturesWidgetBase : public UEditorUtilityWidget
 
   // next request index to use
   int NextRequestIndex = 0;
+
+  bool executedFlag = false;
 
   // actors that are currently being processed
   TArray<AActor*> ActorSet;

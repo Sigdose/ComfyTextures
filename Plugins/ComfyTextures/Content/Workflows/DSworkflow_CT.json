@@ -1,0 +1,166 @@
+{
+  "12": {
+    "inputs": {
+      "geometry_resolution": 256,
+      "threshold": 25,
+      "model": [
+        "14",
+        0
+      ],
+      "reference_image": [
+        "17",
+        0
+      ],
+      "reference_mask": [
+        "17",
+        1
+      ]
+    },
+    "class_type": "TripoSRSampler",
+    "_meta": {
+      "title": "TripoSR Sampler"
+    }
+  },
+  "13": {
+    "inputs": {
+      "prompt":"robottoy",
+      "preview3d": null,
+      "mesh": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "TripoSRViewer",
+    "_meta": {
+      "title": "TripoSR Viewer"
+    }
+  },
+  "14": {
+    "inputs": {
+      "model": "TripoSRmodel.ckpt",
+      "chunk_size": 8192
+    },
+    "class_type": "TripoSRModelLoader",
+    "_meta": {
+      "title": "TripoSR Model Loader"
+    }
+  },
+  "17": {
+    "inputs": {
+      "rembg_session": [
+        "18",
+        0
+      ],
+      "image": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "ImageRemoveBackground+",
+    "_meta": {
+      "title": "🔧 Image Remove Background"
+    }
+  },
+  "18": {
+    "inputs": {
+      "model": "u2net: general purpose",
+      "providers": "CPU"
+    },
+    "class_type": "RemBGSession+",
+    "_meta": {
+      "title": "🔧 RemBG Session"
+    }
+  },
+  "20": {
+    "inputs": {
+      "seed": 650295208870407,
+      "steps": 20,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "22",
+        0
+      ],
+      "positive": [
+        "23",
+        0
+      ],
+      "negative": [
+        "25",
+        0
+      ],
+      "latent_image": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "sampler"
+    }
+  },
+  "21": {
+    "inputs": {
+      "samples": [
+        "20",
+        0
+      ],
+      "vae": [
+        "22",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "22": {
+    "inputs": {
+      "ckpt_name": "dreamshaper_8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "23": {
+    "inputs": {
+      "text": "Robottoy",
+      "clip": [
+        "22",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "positive_prompt"
+    }
+  },
+  "24": {
+    "inputs": {
+      "width": 512,
+      "height": 520,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "25": {
+    "inputs": {
+      "text": "ugly",
+      "clip": [
+        "22",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "negative_prompt"
+    }
+  }
+}

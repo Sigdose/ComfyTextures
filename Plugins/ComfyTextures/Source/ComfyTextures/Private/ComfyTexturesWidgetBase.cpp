@@ -1,6 +1,4 @@
 // Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "ComfyTexturesWidgetBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -17,6 +15,15 @@
 #include "UObject/SavePackage.h"
 #include "ScopedTransaction.h"
 #include "Engine/Selection.h"
+
+//lsd start
+#include "CoreMinimal.h"
+#include "Engine/StaticMesh.h"
+#include "Misc/FileHelper.h"
+#include "HAL/PlatformFileManager.h"
+#include "InterchangeManager.h"
+//#include "PythonScriptPlugin/Public/PythonScriptPlugin.h"
+//lsd end
 
 #define LOCTEXT_NAMESPACE "ComfyTextures"
 
@@ -365,6 +372,12 @@ bool UComfyTexturesWidgetBase::ProcessMultipleActors(const TArray<AActor*>& Acto
 
   return true;
 }
+
+
+
+//lsd start
+
+
 
 static FLinearColor SampleBilinear(const TArray<FColor>& Pixels, int Width, int Height, FVector2D Uv)
 {
@@ -1047,6 +1060,167 @@ static bool GetNodeInputProperty(FJsonObject& Workflow, const FString& NodeName,
   return false;
 }
 
+
+//lsd start
+// OBJ File Import 부분
+bool UComfyTexturesWidgetBase::GetExecutedFlag()
+{
+    return executedFlag;
+}
+
+void UComfyTexturesWidgetBase::SetExecutedFlag(bool Flag)
+{
+    executedFlag = Flag;
+    return;
+}
+
+//3d generate 버튼을 눌렀을때 실행하는 부분
+bool UComfyTexturesWidgetBase::Make3d(const FComfyTexturesRenderOptions& RenderOpts, int& RequestIndex)
+{
+    //Connect();
+    // HTTP POST 요청을 보낼 URL 설정
+    FString URL = "http://127.0.0.1:8188/";
+    SetExecutedFlag(false);
+    // 요청에 포함될 JSON 객체 생성
+    
+
+    //RenderOpts 와 Params를 이용하여 프롬프트 설정해주기
+    FString PromptText = RenderOpts.Params.PositivePrompt;
+
+    //비어있는경우 예외처리
+    if (RenderOpts.Params.PositivePrompt.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("프롬프트가 비어 있습니다."));
+        return false;
+    }
+
+    // Workflow JSON 파일 경로 가져오기
+    FString PluginFolderPath = FPaths::Combine(FPaths::ProjectPluginsDir(), TEXT("ComfyTextures"));
+    FString JsonPath = FPaths::Combine(PluginFolderPath, TEXT("/Content/Workflows/"));
+    FString WorkflowJsonPath = FPaths::Combine(JsonPath, TEXT("DSworkflow_CT.json"));
+    //DSworkflow_CT.json
+    if (!FPaths::FileExists(WorkflowJsonPath))
+    {
+        UE_LOG(LogComfyTextures, Error, TEXT("Workflow Json 파일이 존재하지 않습니다: %s "), *WorkflowJsonPath);
+        return false;
+    }
+
+    // Workflow JSON 파일 불러오기
+    FString JsonString = "";
+    if (!FFileHelper::LoadFileToString(JsonString, *WorkflowJsonPath))
+    {
+        UE_LOG(LogComfyTextures, Error, TEXT("Workflow Json 파일을 불러오는데 실패했습니다: %s "), *WorkflowJsonPath);
+        return false;
+    }
+
+    UE_LOG(LogComfyTextures, Warning, TEXT("Workflow Json 파일 불러오기 성공 : %s"),*WorkflowJsonPath);
+    
+
+    // JSON 문자열을 파싱하여 객체로 변환
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
+    TSharedPtr<FJsonObject> Workflow;
+    if (!FJsonSerializer::Deserialize(Reader, Workflow))
+    {
+        UE_LOG(LogComfyTextures, Error, TEXT("Workflow Json 을 역 직렬화 하는데 실패했습니다. "))
+        return false;
+    }
+
+    // Workflow의 속성 설정
+    SetNodeInputProperty(*Workflow, "positive_prompt", "text_g", RenderOpts.Params.PositivePrompt);
+    SetNodeInputProperty(*Workflow, "positive_prompt", "text_l", RenderOpts.Params.PositivePrompt);
+    SetNodeInputProperty(*Workflow, "positive_prompt", "text", RenderOpts.Params.PositivePrompt);
+    SetNodeInputProperty(*Workflow, "negative_prompt", "text_g", RenderOpts.Params.NegativePrompt);
+    SetNodeInputProperty(*Workflow, "negative_prompt", "text_l", RenderOpts.Params.NegativePrompt);
+    SetNodeInputProperty(*Workflow, "negative_prompt", "text", RenderOpts.Params.NegativePrompt);
+
+    SetNodeInputProperty(*Workflow, "TripoSR Viewer", "prompt", RenderOpts.Params.PositivePrompt); //파일이름 (filename)_00001.obj
+    SetNodeInputProperty(*Workflow, "sampler", "seed", RenderOpts.Params.Seed);
+
+    UE_LOG(LogComfyTextures, Warning, TEXT("출력 positive_prompt,%s"), *RenderOpts.Params.PositivePrompt);
+    UE_LOG(LogComfyTextures, Warning, TEXT("출력 negative_prompt,%s"), *RenderOpts.Params.NegativePrompt);
+
+    TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+    Payload->SetStringField("client_id", HttpClient->ClientId);
+    Payload->SetObjectField("prompt", Workflow);
+
+    UE_LOG(LogComfyTextures, Warning, TEXT("Payload 준비"));
+
+    // HTTP 클라이언트 인스턴스 생성
+    // ComfyTexturesHttpClient HttpClient(URL);
+
+    RequestIndex = NextRequestIndex++;
+    RenderQueue.Add(RequestIndex, MakeShared<FComfyTexturesRenderData>());
+
+    TWeakObjectPtr<UComfyTexturesWidgetBase> WeakThis(this);
+    // HTTP POST 요청 보내기
+    return HttpClient->DoHttpPostRequest("prompt", Payload, [WeakThis, RequestIndex ,PromptText](const TSharedPtr<FJsonObject>& ResponesJson, bool bSuccess)
+    {
+        if (!WeakThis.IsValid())
+        {
+            return false;
+        }
+        UComfyTexturesWidgetBase* This = WeakThis.Get();
+
+        if (!This->RenderQueue.Contains(RequestIndex))
+        {
+            UE_LOG(LogComfyTextures, Error, TEXT("Render queue does not contain request index"));
+            return false;
+        }
+
+        FString LogMessageResponse;
+
+        FComfyTexturesRenderData& Data = *This->RenderQueue[RequestIndex];
+        FString PromptId;
+        Data.PromptId = PromptId;
+        Data.State = EComfyTexturesRenderState::Pending;
+
+        if (bSuccess)
+        {
+            // 응답이 성공적으로 받아졌을 경우
+            LogMessageResponse = FString::Printf(TEXT("3D 생성 요청 , 프롬프트: %s"), *PromptText);
+        }
+        else
+        {
+            // 요청이 실패한 경우
+            LogMessageResponse = FString::Printf(TEXT("3D 생성 요청 실패, 프롬프트: %s"), *PromptText);
+            Data.State = EComfyTexturesRenderState::Failed;
+            This->HandleRenderStateChanged(Data);
+            return false;
+        }
+        UE_LOG(LogTemp, Error, TEXT("%s"), *LogMessageResponse);
+
+        if (ResponesJson->HasField("error")) // 에러발생
+        {
+            UE_LOG(LogComfyTextures, Error, TEXT("렌더 요청 실패"));
+            Data.State = EComfyTexturesRenderState::Failed;
+            return false;
+        }
+        else
+        {
+            UE_LOG(LogComfyTextures, Verbose, TEXT("렌더 요청 성공"));
+        }
+        FString PromptID;
+        if (!ResponesJson->TryGetStringField("prompt_id", PromptID))
+        {   // Prompt ID 얻기 실패
+            UE_LOG(LogComfyTextures, Error, TEXT("프롬프트 ID 를 얻는데 실패했습니다."));
+            Data.State = EComfyTexturesRenderState::Failed;
+            This->HandleRenderStateChanged(Data);
+            return false;
+        }
+        This->PromptIdToRequestIndex.Add(PromptId, RequestIndex);
+        Data.State = EComfyTexturesRenderState::Finished;
+        //This->HandleRenderStateChanged(Data);
+
+        return true;
+    } );
+
+
+}
+
+//lsd end
+
+
+
 bool UComfyTexturesWidgetBase::QueueRender(const FComfyTexturesRenderOptions& RenderOpts, int& RequestIndex)
 {
   if (!IsConnected())
@@ -1716,7 +1890,7 @@ void UComfyTexturesWidgetBase::HandleWebSocketMessage(const TSharedPtr<FJsonObje
     UE_LOG(LogComfyTextures, Warning, TEXT("Websocket message missing type field"));
     return;
   }
-
+  
   const TSharedPtr<FJsonObject>* MessageData;
   if (!Message->TryGetObjectField("data", MessageData))
   {
@@ -1730,13 +1904,38 @@ void UComfyTexturesWidgetBase::HandleWebSocketMessage(const TSharedPtr<FJsonObje
     UE_LOG(LogComfyTextures, Verbose, TEXT("Websocket message missing prompt_id field"));
     return;
   }
-
+  // Start of modified section
+  if (MessageType == "executing")
+  {
+      // 작업 진행 중인 메시지일 때 로그 출력
+      UE_LOG(LogComfyTextures, Log, TEXT("Executing task for prompt_id: %s"), *PromptId);
+  }
+  else if (MessageType == "executed")
+  {
+      // 작업 완료된 메시지일 때 로그 출력
+      UE_LOG(LogComfyTextures, Log, TEXT("Task executed for prompt_id: %s"), *PromptId);
+      
+      SetExecutedFlag(true);
+  }
+  else if (MessageType == "error")
+  {
+      // 오류 발생한 메시지일 때 로그 출력
+      UE_LOG(LogComfyTextures, Error, TEXT("Error occurred for prompt_id: %s"), *PromptId);
+  }
+  // End of modified section
+  //lsd start
+  
   if (!PromptIdToRequestIndex.Contains(PromptId))
   {
     UE_LOG(LogComfyTextures, Warning, TEXT("Received websocket message for unknown prompt_id: %s"), *PromptId);
+    
+    for (const auto& Pair : PromptIdToRequestIndex)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Key: %s, Value: %d"), *Pair.Key, Pair.Value);
+    }
     return;
   }
-
+  //lsd end
   int RequestIndex = PromptIdToRequestIndex[PromptId];
   if (!RenderQueue.Contains(RequestIndex))
   {
@@ -1850,7 +2049,10 @@ void UComfyTexturesWidgetBase::HandleWebSocketMessage(const TSharedPtr<FJsonObje
   {
     UE_LOG(LogComfyTextures, Verbose, TEXT("Unknown websocket message type: %s"), *MessageType);
   }
+  return;
 }
+
+
 
 bool UComfyTexturesWidgetBase::ReadRenderTargetPixels(UTextureRenderTarget2D* InputTexture, EComfyTexturesRenderTextureMode Mode, FComfyTexturesImageData& OutImage) const
 {

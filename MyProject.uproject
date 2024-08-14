@@ -13,5 +13,11 @@
 			]
 		}
 	],
-	"Plugins": []
+	"Plugins": [
+		{
+			"Name": "BhapticsPlugin",
+			"Enabled": true,
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/c61885cc9ce54aacbb0230a1a79581cd"
+		}
+	]
 }
